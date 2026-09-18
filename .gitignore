@@ -1,0 +1,15 @@
+.DS_Store
+node_modules/
+.next/
+dist/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.env
+.env.*
+__pycache__/
+*.pyc
+.venv/
+venv/
+.history/
+*.log
