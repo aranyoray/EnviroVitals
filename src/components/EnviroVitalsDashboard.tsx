@@ -135,14 +135,27 @@ export function EnviroVitalsDashboard() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    let restoredChecks: Record<string, string[]> = {};
     try {
       const value = window.localStorage.getItem(STORAGE_KEY);
-      if (value) setSavedChecks(JSON.parse(value) as Record<string, string[]>);
+      if (value) restoredChecks = JSON.parse(value) as Record<string, string[]>;
     } catch {
-      setSavedChecks({});
+      restoredChecks = {};
     }
-    setHydrated(true);
-    void loadProfile(SAMPLE_ZIP);
+    const hydrationTimer = window.setTimeout(() => {
+      if (!active) return;
+      setSavedChecks(restoredChecks);
+      setHydrated(true);
+    }, 0);
+    const profileTimer = window.setTimeout(() => {
+      if (active) void loadProfile(SAMPLE_ZIP);
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(hydrationTimer);
+      window.clearTimeout(profileTimer);
+    };
   }, [loadProfile]);
 
   useEffect(() => {

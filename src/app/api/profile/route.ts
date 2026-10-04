@@ -1,7 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import placesData from "@/data/places-zcta.json";
-import airData from "@/data/air-monitors-2025.json";
-import ucmrData from "@/data/ucmr5-by-pws.json";
 import type { AirMonitor, LocationProfile, UcmrSummary, WaterSystem } from "@/lib/profile";
 
 type PlaceRow = {
@@ -48,7 +45,29 @@ type WaterAttributes = {
   Original_Data_Provider?: string;
 };
 
-const placeByZip = new Map((placesData.records as PlaceRow[]).map((row) => [row.z, row]));
+type PlacesDataset = {
+  meta: {
+    placesRelease: number;
+    placesBrfssYear: number;
+    kidneyRelease: number;
+    kidneyBrfssYear: number;
+    builtAt: string;
+  };
+  records: PlaceRow[];
+};
+
+type AirDataset = { monitors: MonitorRow[] };
+type UcmrDataset = { systems: Record<string, UcmrRow> };
+
+// Next enables resolveJsonModule, which makes the 32,520-row CDC snapshot an
+// enormous literal type. Load these bundled snapshots without inferring that type.
+/* eslint-disable @typescript-eslint/no-require-imports */
+const placesData = require("@/data/places-zcta.json") as PlacesDataset;
+const airData = require("@/data/air-monitors-2025.json") as AirDataset;
+const ucmrData = require("@/data/ucmr5-by-pws.json") as UcmrDataset;
+/* eslint-enable @typescript-eslint/no-require-imports */
+
+const placeByZip = new Map(placesData.records.map((row) => [row.z, row]));
 const waterRegionsByState: Record<string, string> = {
   CT: "01", ME: "01", MA: "01", NH: "01", RI: "01", VT: "01",
   NJ: "02", NY: "02", PR: "02", VI: "02",
@@ -61,7 +80,7 @@ const waterRegionsByState: Record<string, string> = {
   AZ: "09", CA: "09", HI: "09", NV: "09",
   AK: "10", ID: "10", OR: "10", WA: "10",
 };
-const ucmrById = ucmrData.systems as Record<string, UcmrRow>;
+const ucmrById = ucmrData.systems;
 
 function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const radians = (value: number) => (value * Math.PI) / 180;
@@ -72,7 +91,7 @@ function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number):
 }
 
 function nearbyMonitors(lat: number, lon: number): AirMonitor[] {
-  const monitors = airData.monitors as MonitorRow[];
+  const monitors = airData.monitors;
   return monitors
     .map((monitor) => ({ monitor, distance: haversineMiles(lat, lon, monitor.lat, monitor.lon) }))
     .filter(({ distance }) => distance <= 50)
