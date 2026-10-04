@@ -1,93 +1,41 @@
-# CivicVision for iOS
+# EnviroVitals
 
-**Multifactor environmental health for any US locality.** Enter a ZIP code or place — or use your device location — and CivicVision surfaces county-level air and water quality, community health, and its signature feature: a predictive model of the quality-adjusted life-years (QALYs) a community could recover by cutting air and water pollution. Focused on the three organ systems most sensitive to environmental load: **cardiovascular, respiratory, and renal**.
+EnviroVitals is a ZIP-level web app for community cardiovascular, kidney, and metabolic (CKM) health. It pairs adult prevalence estimates where CDC has a matching ZCTA with nearby outdoor air data and public drinking-water-system records, then creates a deterministic household action checklist. Checking actions complete raises the **EnviroHealth action-progress score**; the score is not a personal health or exposure-risk estimate.
 
-This is a native **SwiftUI** port of the [CivicVision web app](https://github.com/ravirajbuilds/envirovitalsweb). Every engine — the EPA AQI calculator, the water-quality index, the state health baseline, the QALY predictor, and the deterministic location-seeded generator — is reimplemented in Swift and produces the same values as the web app.
-
-## What it shows
-
-- **Air Quality (AQI)** — US EPA AQI from PM2.5, PM10 and ozone (+ NO₂), computed with official breakpoints; the composite equals the worst sub-index and names the driver pollutant.
-- **Water Quality (WQI)** — a 0–100 index across three pillars: PFAS & microplastics, heavy metals & pH, and dissolved oxygen.
-- **Community Health** — chronic-disease prevalence (coronary heart disease, stroke, COPD, asthma, chronic kidney disease, diabetes) for the county, compared to the US average.
-- **Predictive Intelligence** — an interactive scenario engine: reduce air + water pollution toward WHO 2021 targets and see the recoverable QALYs per 100k (and county-wide), broken out by organ system, plus each pollutant's compounding multi-system footprint.
-
-## Data & methods
-
-CivicVision is **live where feeds exist, transparently modeled where they don't** — every value is labeled **Live** or **Modeled** in the UI.
-
-- **Live:** Open-Meteo Air Quality (CAMS) for air; USGS NWIS for pH & dissolved oxygen where a gauge is nearby. Both free, no key, HTTPS.
-- **Modeled:** PFAS, microplastics and heavy metals (no free realtime feed) are estimated deterministically from a location's industrial-pressure signature against EPA reference limits. Health baselines are state-level CDC-BRFSS/PLACES-style prevalence adjusted to a county estimate. The predictive engine uses log-linear concentration-response functions from the epidemiological literature (Pope 2004; Krewski 2009; Turner 2016; Bowe 2018; Moon 2012) and WHO 2021 air-quality targets.
-
-Modeled figures are civic decision-support estimates, **not clinical predictions**, **not medical advice**, and **not a substitute for a utility water-quality report or a government air-quality advisory**. See the full disclaimer set in the app (shown on first launch and always available under **Sources & methods**).
-
-## Requirements
-
-- **Xcode 16** or newer
-- **iOS 17.0+** deployment target (uses the Observation framework: `@Observable` / `@Bindable`)
-- No third-party dependencies, no CocoaPods/SPM packages, no API keys.
-
-## Build & run
+## Run the web app
 
 ```bash
-open CivicVision.xcodeproj
+npm install
+npm run dev
 ```
 
-Select the **CivicVision** scheme and an iOS 17+ simulator (or a device) and press **Run** (⌘R).
+Open `http://localhost:3000`. The landing page loads a sample profile for ZIP `10013`. Search another five-digit ZIP to view a different area.
 
-From the command line:
+The interface uses Next.js App Router, React, and TypeScript. Profile data is served by `/api/profile?zip=10013`. No account or API key is required. Checklist progress is stored in browser local storage.
+
+## Data coverage and methods
+
+- **CKM prevalence:** CDC PLACES 2025 provides 2023 BRFSS estimates for populated 2020 Census ZIP Code Tabulation Areas (ZCTAs). The snapshot covers 32,520 ZCTAs with at least 50 adults. It includes coronary heart disease, stroke, high blood pressure, high cholesterol, diabetes, and obesity. The newest ZIP-level chronic kidney disease measure available is PLACES 2023, based on 2021 BRFSS data. CDC discontinued the CKD measure in later releases; older CKD ZCTA IDs are joined to current records by five-digit ZCTA code.
+- **Outdoor air:** EPA AirData 2025 annual concentration records. Each profile uses the nearest complete PM₂.₅ monitor within 50 miles of the Census ZCTA centroid when available, otherwise the postal ZIP coordinates returned by the ZIP place lookup. The app displays monitor distance. This is a measured monitor value, not an address-level estimate or current AQI. EPA’s annual 9.0 µg/m³ standard is a three-year average; EnviroVitals uses it only as a screening reference for the single 2025 monitor value, not to determine attainment.
+- **Map:** OpenStreetMap tiles show the selected ZIP area and up to 30 nearby complete EPA monitor points. Circle colors compare the monitor’s 2025 annual value with the 9.0 µg/m³ screening reference. OpenStreetMap attribution appears on the map.
+- **Drinking water:** EPA’s current public-water-system service-area map is queried at the same ZIP-area coordinates. The app shows the system name, boundary source/model label, and population served when available. It joins EPA’s final UCMR 5 analytical records (2023–2025) by PWS ID and summarizes treated-water entry-point and distribution-system samples. These are system samples, not tap tests. A system absent from UCMR 5 may not have been selected for monitoring; absence is not a non-detection.
+- **Task rules:** Air tasks change when the nearest annual PM₂.₅ reading is above 9.0 µg/m³. Water tasks change based on the system match, UCMR 5 records, and whether the user selects public water, private well, or unsure. The public-system branch prioritizes confirming the utility, reviewing the Consumer Confidence Report, and matching any filter certification to a measured contaminant. The private-well branch follows EPA’s annual test list.
+- **Score:** Completed task points divided by all points in the current checklist, rounded to a whole number. Task rules and points are fixed; completion only changes the progress score. A ZIP or source-mode change loads that profile’s separate saved checklist.
+
+Sources are linked in the app under **Sources & methods**. Valid postal ZIPs recognized by the ZIP place lookup can receive air and water results. CKM estimates are available only for matching populated Census ZCTAs in CDC PLACES; a missing estimate is shown as unavailable, never as zero. The data layers use different source years and geographic methods. ZCTAs approximate, but are not identical to, USPS ZIP delivery areas.
+
+## Refresh public data snapshots
 
 ```bash
-xcodebuild -scheme CivicVision -destination 'generic/platform=iOS' build
+npm run data:refresh
 ```
 
-> The project uses an Xcode 16 **file-system–synchronized group**, so every file placed under `CivicVision/` is compiled automatically — there is no per-file list to maintain. If you'd rather regenerate the project, an [XcodeGen](https://github.com/yonaskolb/XcodeGen) spec is provided: `brew install xcodegen && xcodegen generate`.
+This downloads CDC PLACES 2025 and 2023 ZCTA data, EPA AirData 2025 annual monitor data, and the final EPA UCMR 5 archive. It writes compact JSON snapshots under `src/data/`. The EPA water-system boundary layer is queried live. Python 3 and network access are required; the script uses only the Python standard library.
 
-## Shipping to the App Store
+## Existing iOS project
 
-The project is configured for release:
+The repository’s original SwiftUI project remains in `CivicVision/` and `CivicVision.xcodeproj/`.
 
-- **App icon** — a single 1024×1024 opaque asset in `Assets.xcassets/AppIcon.appiconset` (Xcode generates the smaller sizes).
-- **Privacy manifest** — `CivicVision/PrivacyInfo.xcprivacy` declares no tracking, precise-location used only for app functionality (not linked to identity), and the required-reason `UserDefaults` API.
-- **Location permission** — `NSLocationWhenInUseUsageDescription` is set via build settings (`GENERATE_INFOPLIST_FILE = YES`).
-- **Disclaimers** — a first-run consent gate plus per-screen medical/data disclaimers.
-- **Networking** — all endpoints are HTTPS, so no App Transport Security exceptions are needed.
+## Use notice
 
-Before your first upload, set your **Team** and a unique **bundle identifier** (currently `lol.raviraj.civicvision`) under *Signing & Capabilities*, then **Product ▸ Archive**. In App Store Connect, answer the privacy questionnaire to match the manifest: *Precise Location → App Functionality → not used for tracking, not linked to identity.*
-
-## Project structure
-
-```
-CivicVision/
-├── CivicVisionApp.swift        App entry point
-├── PrivacyInfo.xcprivacy       Privacy manifest
-├── Assets.xcassets/            App icon + accent color
-├── Engine/                     Pure logic (ports of the web app's lib/civic)
-│   ├── Rng.swift               Deterministic location-seeded PRNG (xmur3 + mulberry32)
-│   ├── Bands.swift             Six-step risk banding
-│   ├── Aqi.swift               EPA AQI engine
-│   ├── Wqi.swift               Water Quality Index engine
-│   ├── Health.swift            State chronic-disease baseline (50 states + DC)
-│   ├── Predict.swift           Concentration-response QALY predictor
-│   ├── CivicProfile.swift      Orchestrator that assembles one profile
-│   └── Format.swift            Display formatting helpers
-├── Services/                   Live feeds
-│   ├── AirService.swift        Open-Meteo air quality
-│   ├── WaterService.swift      USGS NWIS water
-│   └── Geocoder.swift          ZIP (Zippopotam) + place (Open-Meteo) search
-├── Store/
-│   └── ExposureStore.swift     App state, CoreLocation, orchestration
-├── Theme/
-│   └── Theme.swift             Light/dark color system
-└── Views/                      SwiftUI screens & components
-    ├── RootView.swift          Disclaimer gate + navigation
-    ├── DisclaimerView.swift    First-run consent
-    ├── HomeView.swift          Dashboard
-    ├── AirView / WaterView / HealthView / PredictView / AboutView
-    ├── LocationSearchView.swift
-    ├── Components.swift        Reusable UI (rings, meters, pills, cards)
-    └── DetailScaffold.swift
-```
-
-## Disclaimer
-
-CivicVision is for general information and education only. It is not a medical device and does not provide medical advice, diagnosis, or treatment. Always consult a qualified health professional. In an emergency, call your local emergency number (911 in the US) or Poison Control (1-800-222-1222 in the US).
+EnviroVitals provides community context and general information only. It does not provide a diagnosis, treatment recommendation, or assurance of a home’s air or drinking-water quality. Consult a qualified clinician for health questions, your water provider or a state-certified lab for water testing, and EPA/AirNow for current air-quality advisories.
