@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CommunityMap } from "@/components/CommunityMap";
 import type { ActionItem, LocationProfile, WaterMode } from "@/lib/profile";
 import { buildActionPlan, calculateEnviroHealth, formatEstimate } from "@/lib/profile";
@@ -63,21 +63,6 @@ function ActionRow({ action, checked, onToggle }: { action: ActionItem; checked:
   );
 }
 
-function MetricButton({ label, value, footnote, accent, target }: { label: string; value: string; footnote: string; accent: "air" | "water" | "health" | "score"; target: string }) {
-  return (
-    <button className={`map-metric map-metric-${accent}`} type="button" onClick={() => {
-      const item = document.getElementById(target) as HTMLDetailsElement | null;
-      if (item) {
-        item.open = true;
-        item.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
-    }}>
-      <span className="metric-symbol"><SectionIcon kind={accent === "score" ? "tasks" : accent === "health" ? "health" : accent} /></span>
-      <span className="metric-copy"><strong>{value}</strong><span>{label}</span><small>{footnote}</small></span>
-    </button>
-  );
-}
-
 function OverviewContent({ profile }: { profile: LocationProfile }) {
   const system = profile.waterSystems[0];
   return (
@@ -102,6 +87,9 @@ function OverviewContent({ profile }: { profile: LocationProfile }) {
 }
 
 export function EnviroVitalsDashboard() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const profileRequest = useRef<AbortController | null>(null);
   const [zip, setZip] = useState(SAMPLE_ZIP);
   const [profile, setProfile] = useState<LocationProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -110,14 +98,19 @@ export function EnviroVitalsDashboard() {
   const [savedChecks, setSavedChecks] = useState<Record<string, string[]>>({});
   const [hydrated, setHydrated] = useState(false);
 
-  const loadProfile = useCallback(async (target: string) => {
+  const loadProfile = useCallback(async (target: string, focus = false) => {
+    profileRequest.current?.abort();
+    const controller = new AbortController();
+    profileRequest.current = controller;
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/profile?zip=${encodeURIComponent(target)}`);
+      const response = await fetch(`/api/profile?zip=${encodeURIComponent(target)}`, { signal: controller.signal });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to load this ZIP code.");
+      if (controller.signal.aborted) return;
       setProfile(data as LocationProfile);
+      if (focus) setFocusRequest(value => value + 1);
       setZip(target);
       let savedMode: WaterMode | null = null;
       try {
@@ -128,9 +121,10 @@ export function EnviroVitalsDashboard() {
       }
       setWaterMode(savedMode ?? (data.waterSystems?.length ? "public" : "unknown"));
     } catch (issue) {
+      if (controller.signal.aborted) return;
       setError(issue instanceof Error ? issue.message : "Unable to load this ZIP code.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, []);
 
@@ -155,12 +149,13 @@ export function EnviroVitalsDashboard() {
       active = false;
       window.clearTimeout(hydrationTimer);
       window.clearTimeout(profileTimer);
+      profileRequest.current?.abort();
     };
   }, [loadProfile]);
 
   useEffect(() => {
     if (!hydrated) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(savedChecks));
+    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(savedChecks)); } catch { /* Persistence is optional. */ }
   }, [savedChecks, hydrated]);
 
   const actions = useMemo(() => profile ? buildActionPlan(profile, waterMode) : [], [profile, waterMode]);
@@ -173,7 +168,10 @@ export function EnviroVitalsDashboard() {
   const locationName = profile ? [profile.city, profile.stateAbbr].filter(Boolean).join(", ") || `ZIP ${profile.zip}` : `ZIP ${zip}`;
   const nearestAir = profile?.air;
   const topSystem = profile?.waterSystems[0];
-  const healthSummary = profile?.healthAvailable ? "7 estimates" : "Coverage varies";
+  const selectMapZip = useCallback((target: string) => {
+    setSidebarOpen(true);
+    void loadProfile(target, true);
+  }, [loadProfile]);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -181,7 +179,7 @@ export function EnviroVitalsDashboard() {
       setError("Enter a five-digit ZIP code.");
       return;
     }
-    void loadProfile(zip);
+    void loadProfile(zip, true);
   }
 
   function toggleAction(action: ActionItem) {
@@ -215,10 +213,12 @@ export function EnviroVitalsDashboard() {
       </header>
 
       <main className="map-workspace">
-        <CommunityMap profile={profile} />
+        <CommunityMap profile={profile} focusRequest={focusRequest} onSelectZip={selectMapZip} />
+        {!sidebarOpen && <button className="map-panel-toggle" type="button" onClick={() => setSidebarOpen(true)} aria-controls="community-panel" aria-expanded={false}><SectionIcon kind="pin" /> Explore a ZIP <ArrowIcon /></button>}
 
-        <aside className="map-sidebar" aria-label="Community environmental dashboard">
+        <aside id="community-panel" hidden={!sidebarOpen} className="map-sidebar" aria-label="Community environmental dashboard">
           <div className="panel-heading">
+            <button type="button" className="panel-close" aria-label="Close ZIP profile" onClick={() => setSidebarOpen(false)}>×</button>
             <div className="panel-brand-line"><BrandMark /><span>COMMUNITY ENVIRONMENTAL HEALTH</span></div>
             <h1>Health starts with knowing your place.</h1>
             <p>Local conditions, community health, and practical steps in one view.</p>
@@ -270,7 +270,7 @@ export function EnviroVitalsDashboard() {
                   <details className="concern-item" id="concern-air" open>
                     <summary><span className="concern-dot concern-dot-air" /><span className="concern-title">Outdoor air · PM₂.₅</span><span className="concern-value">{nearestAir ? `${nearestAir.annualPM25.toFixed(1)} µg/m³` : "No monitor"}</span><span className="summary-chev" /></summary>
                     <div className="concern-detail">
-                      {nearestAir ? <><p><strong>{nearestAir.monitorName}</strong> is the nearest complete 2025 EPA monitor, {nearestAir.distanceMiles.toFixed(1)} miles from this ZIP area.</p><p>{nearestAir.annualPM25 > 9 ? "Above" : "At or below"} EPA’s 9.0 µg/m³ annual reference. A single-year reading is not an attainment decision.</p></> : <p>No complete EPA PM₂.₅ monitor was found within 50 miles. The map still shows your ZIP area.</p>}
+                      {nearestAir ? <><p><strong>{nearestAir.monitorName}</strong> is the nearest complete 2025 EPA monitor, {nearestAir.distanceMiles.toFixed(1)} miles from this ZIP area.</p><p>{nearestAir.annualPM25 > 9 ? "Above" : "At or below"} EPA’s 9.0 µg/m³ annual reference. A single-year reading is not an attainment decision.</p></> : <p>No complete EPA PM₂.₅ monitor was found within 50 miles. The nationwide map shows state-based context.</p>}
                       <p className="detail-meta">{profile.airMonitors.length} complete EPA monitor{profile.airMonitors.length === 1 ? "" : "s"} within 50 miles · 2025 annual data</p>
                     </div>
                   </details>
@@ -328,14 +328,6 @@ export function EnviroVitalsDashboard() {
           <div className="panel-footer"><span>Public data · ZIP-level context</span><Link href="/about">Sources &amp; methods <ArrowIcon /></Link></div>
         </aside>
 
-        <div className="map-top-metrics" aria-label="Area summary">
-          <MetricButton label="Outdoor air · PM₂.₅" value={nearestAir ? `${nearestAir.annualPM25.toFixed(1)} µg/m³` : "No nearby monitor"} footnote={nearestAir ? `EPA 2025 · ${nearestAir.distanceMiles.toFixed(1)} mi away` : "EPA annual data"} accent="air" target="concern-air" />
-          <MetricButton label="Public water" value={topSystem ? topSystem.name : "Confirm provider"} footnote={topSystem?.ucmr5 ? `${topSystem.ucmr5.detections} UCMR 5 detections` : "EPA service-area map"} accent="water" target="concern-water" />
-          <MetricButton label="CKM community data" value={healthSummary || "Loading"} footnote={profile?.healthAvailable ? "CDC · mixed source years" : "Coverage varies by ZIP"} accent="health" target="concern-health" />
-          <MetricButton label="Your action progress" value={profile ? `${score}/100` : "—"} footnote={`${completedCount} of ${actions.length} tasks done`} accent="score" target="what-you-can-do" />
-        </div>
-
-        <div className="map-caption"><span className="map-live-dot" /> {profile ? `${profile.zip} · ${locationName}` : "United States · ZIP-level context"}<span className="caption-divider" /> EPA monitor points · OpenStreetMap</div>
       </main>
     </div>
   );

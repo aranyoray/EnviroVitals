@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "data:refresh": "python3 scripts/refresh_public_data.py"
+    "data:refresh": "python3 scripts/refresh_public_data.py",
+    "data:map": "python3 scripts/build_national_map.py"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

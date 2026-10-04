@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. The landing page loads a sample profile for ZIP `10013`. Search another five-digit ZIP to view a different area.
+Open `http://localhost:3000`. The landing page opens a nationwide map. Use **Explore a ZIP** to open the profile panel (initially ZIP `10013`), or zoom in and click a circle. Region controls open the contiguous US, Alaska, and Hawaii.
 
 The interface uses Next.js App Router, React, and TypeScript. Profile data is served by `/api/profile?zip=10013`. No account or API key is required. Checklist progress is stored in browser local storage.
 
@@ -17,7 +17,7 @@ The interface uses Next.js App Router, React, and TypeScript. Profile data is se
 
 - **CKM prevalence:** CDC PLACES 2025 provides 2023 BRFSS estimates for populated 2020 Census ZIP Code Tabulation Areas (ZCTAs). The snapshot covers 32,520 ZCTAs with at least 50 adults. It includes coronary heart disease, stroke, high blood pressure, high cholesterol, diabetes, and obesity. The newest ZIP-level chronic kidney disease measure available is PLACES 2023, based on 2021 BRFSS data. CDC discontinued the CKD measure in later releases; older CKD ZCTA IDs are joined to current records by five-digit ZCTA code.
 - **Outdoor air:** EPA AirData 2025 annual concentration records. Each profile uses the nearest complete PM₂.₅ monitor within 50 miles of the Census ZCTA centroid when available, otherwise the postal ZIP coordinates returned by the ZIP place lookup. The app displays monitor distance. This is a measured monitor value, not an address-level estimate or current AQI. EPA’s annual 9.0 µg/m³ standard is a three-year average; EnviroVitals uses it only as a screening reference for the single 2025 monitor value, not to determine attainment.
-- **Map:** OpenStreetMap tiles show the selected ZIP area and up to 30 nearby complete EPA monitor points. Circle colors compare the monitor’s 2025 annual value with the 9.0 µg/m³ screening reference. OpenStreetMap attribution appears on the map.
+- **Map:** A canvas layer displays 40,977 unique GeoNames ZIP points across all 50 states and DC. Each inherits a state-based air × CKM index. Label-free CARTO tiles use OpenStreetMap geography; attribution credits both providers and GeoNames (CC BY 4.0). A weighted-mean heatmap at wider zooms transitions into circles, without treating ZIP density as higher risk. State indices use equal weights for the air and CKM components; CKM averages cardiac, kidney, and metabolic percentile ranks. Health inputs are adult-population-weighted aggregates of matched CDC ZCTAs; air inputs are means of complete EPA sites. Incomplete components are omitted and remaining weights renormalized (Idaho, Florida, Pennsylvania). These are exploratory state-based estimates, not ZIP measurements, a validated clinical risk score, or the household checklist score. Full calculation and coverage are described at `/about#national-map`.
 - **Drinking water:** EPA’s current public-water-system service-area map is queried at the same ZIP-area coordinates. The app shows the system name, boundary source/model label, and population served when available. It joins EPA’s final UCMR 5 analytical records (2023–2025) by PWS ID and summarizes treated-water entry-point and distribution-system samples. These are system samples, not tap tests. A system absent from UCMR 5 may not have been selected for monitoring; absence is not a non-detection.
 - **Task rules:** Air tasks change when the nearest annual PM₂.₅ reading is above 9.0 µg/m³. Water tasks change based on the system match, UCMR 5 records, and whether the user selects public water, private well, or unsure. The public-system branch prioritizes confirming the utility, reviewing the Consumer Confidence Report, and matching any filter certification to a measured contaminant. The private-well branch follows EPA’s annual test list.
 - **Score:** Completed task points divided by all points in the current checklist, rounded to a whole number. Task rules and points are fixed; completion only changes the progress score. A ZIP or source-mode change loads that profile’s separate saved checklist.
@@ -28,9 +28,10 @@ Sources are linked in the app under **Sources & methods**. Valid postal ZIPs rec
 
 ```bash
 npm run data:refresh
+npm run data:map
 ```
 
-This downloads CDC PLACES 2025 and 2023 ZCTA data, EPA AirData 2025 annual monitor data, and the final EPA UCMR 5 archive. It writes compact JSON snapshots under `src/data/`. The EPA water-system boundary layer is queried live. Python 3 and network access are required; the script uses only the Python standard library.
+This downloads CDC PLACES 2025 and 2023 ZCTA data, EPA AirData 2025 annual monitor data, and the final EPA UCMR 5 archive. It writes compact JSON snapshots under `src/data/`. `data:map` then downloads GeoNames US postal coordinates and builds `public/data/national-map.json` from the current CDC/EPA snapshots. To reuse a downloaded geography snapshot, run `python3 scripts/build_national_map.py --postal-file /path/to/US.txt`. The map JSON is fetched separately in the browser; do not statically import large data snapshots into TypeScript (literal inference can exceed the compiler’s Map size limit). The EPA water-system boundary layer is queried live. Python 3 and network access are required; the script uses only the Python standard library.
 
 ## Existing iOS project
 

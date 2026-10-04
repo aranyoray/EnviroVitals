@@ -2,6 +2,11 @@ import Link from "next/link";
 
 const sources = [
   {
+    name: "GeoNames · US postal geography",
+    url: "https://download.geonames.org/export/zip/",
+    note: "40,977 unique geographic ZIP coordinates across 50 states and DC in the downloaded snapshot. GeoNames is licensed under CC BY 4.0. ZIPs can share coordinates; military and territorial codes are excluded. This is snapshot coverage, not a guarantee of every current USPS code.",
+  },
+  {
     name: "CDC PLACES 2025 · ZIP Code Tabulation Areas",
     url: "https://data.cdc.gov/500-Cities-Places/PLACES-ZCTA-Data-GIS-Friendly-Format-2025-release/kee5-23sr",
     note: "32,520 populated 2020 Census ZCTAs with at least 50 adults. CHD, stroke, high blood pressure, high cholesterol, diabetes, and obesity estimates use the 2023 BRFSS in the 2025 release.",
@@ -49,6 +54,17 @@ export default function AboutPage() {
           <li><strong>CKM:</strong> CDC PLACES publishes modeled adult prevalence, not individual diagnoses. Most current measures use 2023 BRFSS data. CKD was removed from later PLACES releases; 2021 is the latest ZIP-level year available.</li>
           <li><strong>Actions and score:</strong> Rules are deterministic. The EnviroHealth score is the weighted share of checklist points a user has marked complete. It does not estimate health, exposure, or treatment benefit. Checklist state is saved in this browser.</li>
         </ul>
+      </section>
+
+      <section className="about-section" id="national-map">
+        <h2>Nationwide map · state-based estimates</h2>
+        <p>The map is an exploratory air × CKM index, from 0 to 100. Every ZIP in a state receives the same state index. These are state-based estimates extended to ZIP coordinates, not measured ZIP-level conditions, disease probabilities, or a validated health-risk score.</p>
+        <h3>Fixed calculation</h3>
+        <p>For each state, we average the available CDC ZCTA prevalences using adult-population weights. State assignments come from the postal ZIP match; unmatched ZCTAs are excluded. CHD represents cardiac context, CKD represents kidney context, and diabetes and obesity represent metabolic context. These measures are converted separately to midrank percentiles across states with data. The CKM component is the average of cardiac, kidney, and metabolic percentiles; the metabolic component averages diabetes and obesity percentiles.</p>
+        <p>Air uses the mean of complete 2025 EPA PM₂.₅ site values in each state. Multiple instruments at a site are averaged first; sites are then weighted equally. Its percentile contributes 50% of the index, with the CKM component contributing 50%. This is a monitor-network average, not population-weighted exposure. Water is shown in the ZIP profile and is not part of this index because system detections cannot establish statewide tap-water quality.</p>
+        <h3>Coverage and interpretation</h3>
+        <p>Missing components are omitted and remaining weights are normalized. Idaho has no complete PM₂.₅ site in this snapshot; Florida lacks the kidney estimate; Pennsylvania lacks the current cardiac and metabolic estimates. These states use partial data and are marked in circle tooltips. A missing value is never replaced by zero. Source vintages remain mixed: 2025 air, 2023 cardiac/metabolic BRFSS, and 2021 kidney BRFSS.</p>
+        <p>At wider zoom levels, colors blend using a spatially weighted mean of nearby ZIP indices. The smoothing is visual: it can cross state borders and coastlines and does not establish measurements between ZIP points. More ZIPs do not by themselves mean a higher index. Zoom in to see individual circles; overlapping ZIP coordinates may share a circle. Use ZIP search to select a particular code. The map index is independent of your EnviroHealth checklist progress.</p>
       </section>
 
       <section className="about-section">
