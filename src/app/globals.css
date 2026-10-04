@@ -218,7 +218,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 }
 
 /* A quiet geographic canvas keeps the nationwide index in focus. */
-.quiet-basemap { filter: saturate(.15) contrast(.88) brightness(1.045); }
+.quiet-basemap { filter: grayscale(1) contrast(.55) brightness(1.3); opacity: .65; }
 .national-map-overlay { position: absolute; inset: 0; z-index: 401; pointer-events: none; }
 .map-sidebar[hidden] { display: none; }
 .panel-heading { position: relative; }

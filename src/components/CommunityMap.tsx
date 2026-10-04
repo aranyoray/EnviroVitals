@@ -57,9 +57,10 @@ export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMa
       });
       activeMap = instance;
       map.current = instance;
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png", {
-        subdomains: "abcd", maxZoom: 19, className: "quiet-basemap",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a> · ZIPs: <a href="https://www.geonames.org/">GeoNames</a>',
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19, className: "quiet-basemap", updateWhenIdle: true,
+        referrerPolicy: "strict-origin-when-cross-origin",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · ZIPs: <a href="https://www.geonames.org/">GeoNames</a>',
       }).addTo(instance);
       L.control.zoom({ position: "bottomright" }).addTo(instance);
       fitRegion.current = (region) => {
