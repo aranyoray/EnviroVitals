@@ -2,15 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { Map as LeafletMap, LeafletMouseEvent } from "leaflet";
+import type { Feature, FeatureCollection, Geometry } from "geojson";
+import type { GeoJSON as LeafletGeoJSON, Map as LeafletMap, Path as LeafletPath } from "leaflet";
 import type { LocationProfile } from "@/lib/profile";
-import { indexColor, paintHeat, projectZip, type NationalMapData, type ZipPoint } from "@/lib/national-map";
+import { COUNTY_COLORS, NO_COUNTY_DATA, countyColor, type CountyProperties } from "@/lib/national-map";
 
 interface CommunityMapProps {
   profile: LocationProfile | null;
   focusRequest: number;
   onSelectZip: (zip: string) => void;
 }
+
+type CountyFeature = Feature<Geometry, CountyProperties>;
+type CountyData = FeatureCollection<Geometry, CountyProperties> & {
+  meta: { assignedZipCount: number; source: string; indexSource: string };
+};
 
 function focusProfile(instance: LeafletMap, profile: LocationProfile) {
   instance.setView([profile.latitude, profile.longitude], 10, { animate: false });
@@ -21,29 +27,39 @@ function focusProfile(instance: LeafletMap, profile: LocationProfile) {
   }
 }
 
+function validCountyData(data: CountyData): boolean {
+  return data.type === "FeatureCollection" && Array.isArray(data.features)
+    && data.features.length >= 3000 && data.features.length <= 4000
+    && Number.isInteger(data.meta?.assignedZipCount) && data.meta.assignedZipCount >= 25000
+    && data.features.every((feature) => {
+      const p = feature.properties;
+      return feature.type === "Feature" && ["Polygon", "MultiPolygon"].includes(feature.geometry?.type)
+        && /^\d{5}$/.test(p?.fips) && typeof p.name === "string" && typeof p.state === "string"
+        && Number.isInteger(p.zipCount) && p.zipCount >= 0
+        && Number.isInteger(p.partialCount) && p.partialCount >= 0 && p.partialCount <= p.zipCount
+        && (p.index === null || (Number.isFinite(p.index) && p.index >= 0 && p.index <= 100))
+        && (p.sampleZip === null || /^\d{5}$/.test(p.sampleZip));
+    });
+}
+
 export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMapProps) {
   const mapElement = useRef<HTMLDivElement>(null);
   const map = useRef<LeafletMap | null>(null);
   const selection = useRef({ profile, focusRequest, onSelectZip });
-  const redraw = useRef<(() => void) | null>(null);
-  const [status, setStatus] = useState("Loading nationwide layer…");
-  const [pointCount, setPointCount] = useState(0);
-  const [view, setView] = useState("Heatmap");
+  const [status, setStatus] = useState("Loading county map…");
+  const [coverage, setCoverage] = useState({ counties: 0, withData: 0, zips: 0 });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     selection.current = { profile, focusRequest, onSelectZip };
-    if (profile && focusRequest > 0) {
-      if (map.current) focusProfile(map.current, profile);
-    }
-    redraw.current?.();
+    if (profile && focusRequest > 0 && map.current) focusProfile(map.current, profile);
   }, [profile, focusRequest, onSelectZip]);
 
   useEffect(() => {
     let disposed = false;
     let activeMap: LeafletMap | null = null;
+    let countyLayer: LeafletGeoJSON<CountyProperties> | null = null;
     let resize: ResizeObserver | null = null;
-    let frame = 0;
     const controller = new AbortController();
 
     async function createMap() {
@@ -52,13 +68,14 @@ export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMa
       const instance = L.map(mapElement.current, {
         center: [38.5, -97], zoom: 4, minZoom: 2, maxZoom: 15,
         zoomControl: false, scrollWheelZoom: true, zoomAnimation: false,
+        preferCanvas: true,
       });
       activeMap = instance;
       map.current = instance;
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19, className: "quiet-basemap", updateWhenIdle: true,
         referrerPolicy: "strict-origin-when-cross-origin",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · ZIPs: <a href="https://www.geonames.org/">GeoNames</a>',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · Counties: <a href="https://www.census.gov/geographies/mapping-files/time-series/geo/cartographic-boundary.html">U.S. Census Bureau</a>',
       }).addTo(instance);
       L.control.zoom({ position: "bottomright" }).addTo(instance);
       const size = instance.getSize();
@@ -68,149 +85,83 @@ export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMa
       instance.fitBounds([[24.3, -125], [49.7, -66.5]], {
         paddingTopLeft: [left, 40], paddingBottomRight: [45, bottom], animate: false,
       });
-      const canvas = document.createElement("canvas");
-      canvas.className = "national-map-overlay";
-      canvas.setAttribute("aria-hidden", "true");
-      instance.getContainer().appendChild(canvas);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Your browser could not open the map canvas.");
-      const tooltip = L.tooltip({ direction: "top", offset: [0, -10], className: "zip-map-tooltip" });
-      let data: NationalMapData | null = null;
-      let projected: ReturnType<typeof projectZip>[] = [];
-      let visible: { x: number; y: number; point: ZipPoint }[] = [];
-
-      function render() {
-        if (disposed || !ctx) return;
-        const { x: width, y: height } = instance.getSize();
-        if (!width || !height) return;
-        const ratio = Math.min(window.devicePixelRatio || 1, 2);
-        if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
-          canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
-          canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
-        }
-        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-        ctx.clearRect(0, 0, width, height);
-        if (!data) return;
-        const zoom = instance.getZoom();
-        const world = 256 * 2 ** zoom;
-        // containerPointToLayerPoint includes Leaflet's translation while dragging.
-        const topLeft = instance.containerPointToLayerPoint([0, 0]).add(instance.getPixelOrigin());
-        const centerX = topLeft.x + width / 2;
-        visible = [];
-        const heatPoints: { x: number; y: number; value: number }[] = [];
-        for (const p of projected) {
-          let wx = p.x * world;
-          wx += Math.round((centerX - wx) / world) * world;
-          const x = wx - topLeft.x, y = p.y * world - topLeft.y;
-          if (x < -50 || y < -50 || x > width + 50 || y > height + 50) continue;
-          visible.push({ x, y, point: p.point });
-          const value = p.point[4];
-          if (value !== null) heatPoints.push({ x, y, value });
-        }
-        const dotOpacity = Math.max(0, Math.min(1, (zoom - 5) / 3));
-        if (dotOpacity < 1) paintHeat(ctx, width, height, heatPoints, 1 - dotOpacity);
-        if (dotOpacity > 0) {
-          ctx.globalAlpha = dotOpacity * 0.88;
-          const radius = zoom >= 11 ? 7 : zoom >= 9 ? 5 : 3.2;
-          for (const p of visible) {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, radius * (0.75 + (p.point[4] ?? 50) / 200), 0, Math.PI * 2);
-            ctx.fillStyle = `rgb(${indexColor(p.point[4]).join(",")})`;
-            ctx.fill();
-            ctx.lineWidth = zoom >= 9 ? 1.3 : 0.7;
-            ctx.strokeStyle = "rgba(255,255,255,.9)";
-            ctx.stroke();
-          }
-          ctx.globalAlpha = 1;
-        }
-        const current = selection.current;
-        if (current.profile && current.focusRequest > 0) {
-          const p = instance.latLngToContainerPoint([current.profile.latitude, current.profile.longitude]);
-          ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
-          ctx.strokeStyle = "#173c32"; ctx.lineWidth = 2; ctx.stroke();
-          ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
-          ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
-        }
-      }
-      const schedule = () => {
-        cancelAnimationFrame(frame);
-        frame = requestAnimationFrame(render);
-      };
-      redraw.current = schedule;
-      instance.on("move zoom resize", schedule);
-      instance.on("zoomend", () => setView(instance.getZoom() >= 8 ? "ZIP circles" : instance.getZoom() > 5 ? "Heatmap + circles" : "Heatmap"));
-      instance.on("movestart", () => tooltip.remove());
-      function nearest(event: LeafletMouseEvent, radius: number) {
-        let found: typeof visible[number] | undefined;
-        let distance = radius ** 2;
-        for (const p of visible) {
-          const d = (p.x - event.containerPoint.x) ** 2 + (p.y - event.containerPoint.y) ** 2;
-          if (d < distance) { distance = d; found = p; }
-        }
-        return found;
-      }
-      instance.on("mousemove", (event: LeafletMouseEvent) => {
-        if (!data || instance.getZoom() < 7) return;
-        const hit = nearest(event, 12);
-        instance.getContainer().style.cursor = hit ? "pointer" : "";
-        if (!hit) { tooltip.remove(); return; }
-        const state = data.states[hit.point[3]];
-        const content = document.createElement("div");
-        content.textContent = `ZIP ${hit.point[0]} · ${state.name} · Index ${hit.point[4] === null ? "unavailable" : Math.round(hit.point[4])}${hit.point[5] & 4 ? " · Partial data" : ""}`;
-        const note = document.createElement("small");
-        note.textContent = `${hit.point[5] & 1 ? "ZIP health" : "State health fallback"}${(hit.point[5] & 3) === 3 ? " + state fallback" : ""} · State air · Click for profile`;
-        content.appendChild(note);
-        tooltip.setLatLng([hit.point[1], hit.point[2]]).setContent(content).addTo(instance);
-      });
-      instance.on("mouseout", () => tooltip.remove());
-      instance.on("click", (event: LeafletMouseEvent) => {
-        const hit = nearest(event, instance.getZoom() < 8 ? 45 : 14);
-        if (!hit) return;
-        tooltip.remove();
-        if (instance.getZoom() < 8) instance.setView(event.latlng, Math.min(8, instance.getZoom() + 2));
-        else selection.current.onSelectZip(hit.point[0]);
-      });
-      resize = new ResizeObserver(() => { instance.invalidateSize(); schedule(); });
+      if (size.x <= 640) instance.setView([38.5, -97], 3, { animate: false });
+      resize = new ResizeObserver(() => instance.invalidateSize());
       resize.observe(mapElement.current);
-      const response = await fetch("/data/national-map.json?v=2", { signal: controller.signal });
-      if (!response.ok) throw new Error("Nationwide layer unavailable.");
-      const result = await response.json() as NationalMapData;
-      if (result.meta?.version !== 2 || !Array.isArray(result.points) || result.points.length > 100000 || !Array.isArray(result.states) || result.states.length > 60
-        || result.points.some(p => p.length !== 6 || !/^\d{5}$/.test(p[0]) || !Number.isFinite(p[1]) || Math.abs(p[1]) > 85 || !Number.isFinite(p[2]) || Math.abs(p[2]) > 180 || !Number.isInteger(p[3]) || !result.states[p[3]] || (p[4] !== null && (!Number.isFinite(p[4]) || p[4] < 0 || p[4] > 100)) || !Number.isInteger(p[5]) || p[5] < 0 || p[5] > 7)
-        || result.states.some(s => s.index !== null && (!Number.isFinite(s.index) || s.index < 0 || s.index > 100))) {
-        throw new Error("Nationwide layer could not be read.");
-      }
+
+      const response = await fetch("/data/county-map.json?v=1", { signal: controller.signal });
+      if (!response.ok) throw new Error("County map unavailable.");
+      const data = await response.json() as CountyData;
+      if (!validCountyData(data)) throw new Error("County map could not be read.");
       if (disposed) return;
-      data = result;
-      projected = data.points.map(projectZip);
-      setPointCount(data.points.length);
+
+      const renderer = L.canvas({ padding: 0.4 });
+      const text = (value: string, className?: string) => {
+        const element = document.createElement("div");
+        if (className) element.className = className;
+        element.textContent = value;
+        return element;
+      };
+      countyLayer = L.geoJSON(data, {
+        style(feature) {
+          const p = feature?.properties as CountyProperties | undefined;
+          return { renderer, color: p?.index === null ? "#b4bcb8" : "#ffffff", weight: 0.72,
+            fillColor: countyColor(p?.index ?? null), fillOpacity: 0.96 };
+        },
+        onEachFeature(feature, layer) {
+          const p = (feature as CountyFeature).properties;
+          const tooltip = document.createElement("div");
+          tooltip.append(text(`${p.name}, ${p.state}`, "county-tooltip-title"));
+          tooltip.append(text(p.index === null ? "No ZIP index available" : `County mean index ${p.index.toFixed(1)} · ${p.zipCount.toLocaleString()} ZIPs`));
+          layer.bindTooltip(tooltip, { direction: "top", className: "county-map-tooltip" });
+          layer.on("mouseover", () => (layer as LeafletPath).setStyle({ weight: 1.6, color: "#314d52", fillOpacity: 1 }));
+          layer.on("mouseout", () => countyLayer?.resetStyle(layer as LeafletPath));
+          layer.on("click", (event) => {
+            const popup = document.createElement("div");
+            popup.className = "county-popup";
+            popup.append(text(`${p.name}, ${p.state}`, "county-popup-name"));
+            popup.append(text(p.index === null ? "No ZIP index available for this county." : `Average index ${p.index.toFixed(1)} across ${p.zipCount.toLocaleString()} postal ZIPs.`));
+            if (p.partialCount) popup.append(text(`${p.partialCount.toLocaleString()} ZIPs have partial input data.`));
+            if (p.sampleZip) {
+              const button = document.createElement("button");
+              button.type = "button";
+              button.textContent = `Open example ZIP ${p.sampleZip}`;
+              button.addEventListener("click", () => { instance.closePopup(); selection.current.onSelectZip(p.sampleZip!); });
+              popup.append(button);
+            }
+            L.popup({ maxWidth: 270 }).setLatLng(event.latlng).setContent(popup).openOn(instance);
+          });
+        },
+      }).addTo(instance);
+      setCoverage({ counties: data.features.length, withData: data.features.filter(f => f.properties.index !== null).length, zips: data.meta.assignedZipCount });
       setStatus("");
       const current = selection.current;
       if (current.profile && current.focusRequest > 0) focusProfile(instance, current.profile);
-      schedule();
     }
     void createMap().catch((error: unknown) => {
       if (!disposed) setStatus(error instanceof Error ? error.message : "Map unavailable.");
     });
     return () => {
       disposed = true;
-      controller.abort(); cancelAnimationFrame(frame); resize?.disconnect();
-      redraw.current = null; map.current = null;
+      controller.abort(); resize?.disconnect();
+      map.current = null;
       activeMap?.remove();
     };
   }, [attempt]);
 
   return (
-    <div className="community-map" aria-label="United States air and CKM index map, using ZIP health and state air estimates">
+    <div className="community-map" aria-label="United States county map of the air and CKM ZIP index">
       <div className="map-canvas" ref={mapElement} />
-      {status && <div className="national-map-status" role="status">{status}{!status.startsWith("Loading") && <button onClick={() => { setStatus("Loading nationwide layer…"); setAttempt(a => a + 1); }}>Retry</button>}</div>}
+      {status && <div className="national-map-status" role="status">{status}{!status.startsWith("Loading") && <button onClick={() => { setStatus("Loading county map…"); setAttempt(a => a + 1); }}>Retry</button>}</div>}
       <div className="national-map-legend">
-        <div className="national-legend-title"><strong>Environment × CKM</strong><span>{view}</span></div>
+        <div className="national-legend-title"><strong>Environment × CKM</strong><span>County averages</span></div>
         <Link href="/about#national-map">ZIP + state estimates ↗</Link>
-        <div className="national-color-ramp" />
-        <div className="national-legend-range"><span>Lower index</span><span>Higher index</span></div>
-        <small className="national-size-key">Larger circles = higher index</small>
-        <p>{pointCount ? `${pointCount.toLocaleString()} ZIPs · 50 states + DC` : "Nationwide ZIP coverage"}</p>
+        <div className="national-color-ramp" aria-label="Higher index in red, lower index in teal">
+          {COUNTY_COLORS.map((color) => <i key={color} style={{ backgroundColor: color }} />)}
+        </div>
+        <div className="national-legend-range"><span>Higher index</span><span>Lower index</span></div>
+        <div className="county-no-data"><i style={{ backgroundColor: NO_COUNTY_DATA }} />No ZIP index</div>
+        <p>{coverage.counties ? `${coverage.withData.toLocaleString()} of ${coverage.counties.toLocaleString()} counties · ${coverage.zips.toLocaleString()} ZIPs` : "Nationwide county coverage"}</p>
       </div>
     </div>
   );
