@@ -11,7 +11,6 @@ interface CommunityMapProps {
   focusRequest: number;
   onSelectZip: (zip: string) => void;
 }
-type Region = "US" | "Alaska" | "Hawaii";
 
 function focusProfile(instance: LeafletMap, profile: LocationProfile) {
   instance.setView([profile.latitude, profile.longitude], 10, { animate: false });
@@ -27,7 +26,6 @@ export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMa
   const map = useRef<LeafletMap | null>(null);
   const selection = useRef({ profile, focusRequest, onSelectZip });
   const redraw = useRef<(() => void) | null>(null);
-  const fitRegion = useRef<((region: Region) => void) | null>(null);
   const [status, setStatus] = useState("Loading nationwide layer…");
   const [pointCount, setPointCount] = useState(0);
   const [view, setView] = useState("Heatmap");
@@ -63,19 +61,13 @@ export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMa
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · ZIPs: <a href="https://www.geonames.org/">GeoNames</a>',
       }).addTo(instance);
       L.control.zoom({ position: "bottomright" }).addTo(instance);
-      fitRegion.current = (region) => {
-        const bounds: Record<Region, [[number, number], [number, number]]> = {
-          US: [[24.3, -125], [49.7, -66.5]],
-          Alaska: [[51, -179.5], [71.5, -129]],
-          Hawaii: [[18.8, -160.5], [22.5, -154.5]],
-        };
-        const size = instance.getSize();
-        const panel = document.querySelector<HTMLElement>(".map-sidebar:not([hidden])");
-        const left = size.x > 640 && panel ? panel.offsetWidth + 45 : 24;
-        const bottom = size.x <= 640 && panel ? panel.offsetHeight + 35 : 100;
-        instance.fitBounds(bounds[region], { paddingTopLeft: [left, 65], paddingBottomRight: [45, bottom], animate: false });
-      };
-      fitRegion.current("US");
+      const size = instance.getSize();
+      const panel = document.querySelector<HTMLElement>(".map-sidebar:not([hidden])");
+      const left = size.x > 640 && panel ? panel.offsetWidth + 45 : 24;
+      const bottom = size.x <= 640 && panel ? panel.offsetHeight + 35 : 100;
+      instance.fitBounds([[24.3, -125], [49.7, -66.5]], {
+        paddingTopLeft: [left, 40], paddingBottomRight: [45, bottom], animate: false,
+      });
       const canvas = document.createElement("canvas");
       canvas.className = "national-map-overlay";
       canvas.setAttribute("aria-hidden", "true");
@@ -112,7 +104,7 @@ export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMa
           const x = wx - topLeft.x, y = p.y * world - topLeft.y;
           if (x < -50 || y < -50 || x > width + 50 || y > height + 50) continue;
           visible.push({ x, y, point: p.point });
-          const value = data.states[p.point[3]].index;
+          const value = p.point[4];
           if (value !== null) heatPoints.push({ x, y, value });
         }
         const dotOpacity = Math.max(0, Math.min(1, (zoom - 5) / 3));
@@ -122,8 +114,8 @@ export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMa
           const radius = zoom >= 11 ? 7 : zoom >= 9 ? 5 : 3.2;
           for (const p of visible) {
             ctx.beginPath();
-            ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-            ctx.fillStyle = `rgb(${indexColor(data.states[p.point[3]].index).join(",")})`;
+            ctx.arc(p.x, p.y, radius * (0.75 + (p.point[4] ?? 50) / 200), 0, Math.PI * 2);
+            ctx.fillStyle = `rgb(${indexColor(p.point[4]).join(",")})`;
             ctx.fill();
             ctx.lineWidth = zoom >= 9 ? 1.3 : 0.7;
             ctx.strokeStyle = "rgba(255,255,255,.9)";
@@ -164,9 +156,9 @@ export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMa
         if (!hit) { tooltip.remove(); return; }
         const state = data.states[hit.point[3]];
         const content = document.createElement("div");
-        content.textContent = `ZIP ${hit.point[0]} · ${state.name} · Index ${state.index === null ? "unavailable" : Math.round(state.index)}${state.partial ? " · Partial data" : ""}`;
+        content.textContent = `ZIP ${hit.point[0]} · ${state.name} · Index ${hit.point[4] === null ? "unavailable" : Math.round(hit.point[4])}${hit.point[5] & 4 ? " · Partial data" : ""}`;
         const note = document.createElement("small");
-        note.textContent = "State-based estimate · Click for ZIP profile";
+        note.textContent = `${hit.point[5] & 1 ? "ZIP health" : "State health fallback"}${(hit.point[5] & 3) === 3 ? " + state fallback" : ""} · State air · Click for profile`;
         content.appendChild(note);
         tooltip.setLatLng([hit.point[1], hit.point[2]]).setContent(content).addTo(instance);
       });
@@ -180,11 +172,11 @@ export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMa
       });
       resize = new ResizeObserver(() => { instance.invalidateSize(); schedule(); });
       resize.observe(mapElement.current);
-      const response = await fetch("/data/national-map.json", { signal: controller.signal });
+      const response = await fetch("/data/national-map.json?v=2", { signal: controller.signal });
       if (!response.ok) throw new Error("Nationwide layer unavailable.");
       const result = await response.json() as NationalMapData;
-      if (!Array.isArray(result.points) || result.points.length > 100000 || !Array.isArray(result.states) || result.states.length > 60
-        || result.points.some(p => p.length !== 4 || !/^\d{5}$/.test(p[0]) || !Number.isFinite(p[1]) || Math.abs(p[1]) > 85 || !Number.isFinite(p[2]) || Math.abs(p[2]) > 180 || !Number.isInteger(p[3]) || !result.states[p[3]])
+      if (result.meta?.version !== 2 || !Array.isArray(result.points) || result.points.length > 100000 || !Array.isArray(result.states) || result.states.length > 60
+        || result.points.some(p => p.length !== 6 || !/^\d{5}$/.test(p[0]) || !Number.isFinite(p[1]) || Math.abs(p[1]) > 85 || !Number.isFinite(p[2]) || Math.abs(p[2]) > 180 || !Number.isInteger(p[3]) || !result.states[p[3]] || (p[4] !== null && (!Number.isFinite(p[4]) || p[4] < 0 || p[4] > 100)) || !Number.isInteger(p[5]) || p[5] < 0 || p[5] > 7)
         || result.states.some(s => s.index !== null && (!Number.isFinite(s.index) || s.index < 0 || s.index > 100))) {
         throw new Error("Nationwide layer could not be read.");
       }
@@ -203,23 +195,21 @@ export function CommunityMap({ profile, focusRequest, onSelectZip }: CommunityMa
     return () => {
       disposed = true;
       controller.abort(); cancelAnimationFrame(frame); resize?.disconnect();
-      redraw.current = null; fitRegion.current = null; map.current = null;
+      redraw.current = null; map.current = null;
       activeMap?.remove();
     };
   }, [attempt]);
 
   return (
-    <div className="community-map" aria-label="United States air and CKM index map, using state-based estimates">
+    <div className="community-map" aria-label="United States air and CKM index map, using ZIP health and state air estimates">
       <div className="map-canvas" ref={mapElement} />
-      <div className="map-region-control" role="group" aria-label="Map region">
-        {(["US", "Alaska", "Hawaii"] as Region[]).map(region => <button type="button" key={region} onClick={() => fitRegion.current?.(region)}>{region === "US" ? "Contiguous US" : region}</button>)}
-      </div>
       {status && <div className="national-map-status" role="status">{status}{!status.startsWith("Loading") && <button onClick={() => { setStatus("Loading nationwide layer…"); setAttempt(a => a + 1); }}>Retry</button>}</div>}
       <div className="national-map-legend">
         <div className="national-legend-title"><strong>Environment × CKM</strong><span>{view}</span></div>
-        <Link href="/about#national-map">State-based estimates ↗</Link>
+        <Link href="/about#national-map">ZIP + state estimates ↗</Link>
         <div className="national-color-ramp" />
         <div className="national-legend-range"><span>Lower index</span><span>Higher index</span></div>
+        <small className="national-size-key">Larger circles = higher index</small>
         <p>{pointCount ? `${pointCount.toLocaleString()} ZIPs · 50 states + DC` : "Nationwide ZIP coverage"}</p>
       </div>
     </div>

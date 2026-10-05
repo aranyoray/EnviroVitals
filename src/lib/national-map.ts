@@ -10,9 +10,10 @@ export interface NationalState {
   diabetes: number | null;
   obesity: number | null;
 }
-export type ZipPoint = [zip: string, latitude: number, longitude: number, stateIndex: number];
+/** Coverage bits: 1 = local health, 2 = state health fallback, 4 = missing component. */
+export type ZipPoint = [zip: string, latitude: number, longitude: number, stateIndex: number, index: number | null, coverage: number];
 export interface NationalMapData {
-  meta: { pointCount: number; label: string };
+  meta: { version: number; pointCount: number; label: string };
   states: NationalState[];
   points: ZipPoint[];
 }

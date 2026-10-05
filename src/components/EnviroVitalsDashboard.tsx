@@ -25,8 +25,15 @@ function ArrowIcon() {
   return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M10 4l6 6-6 6" /></svg>;
 }
 
-function SectionIcon({ kind }: { kind: "pin" | "air" | "water" | "health" | "tasks" | "pulse" }) {
+function SectionIcon({ kind }: { kind: "pin" | "air" | "water" | "health" | "tasks" | "pulse" | "heart" | "kidney" | "metabolic" | "check" | "alert" | "info" | "missing" }) {
   const paths = {
+    heart: <><path d="M12 21 3.5 12.5a5.5 5.5 0 0 1 8-7.5l.5.5.5-.5a5.5 5.5 0 0 1 8 7.5Z" /><path d="M5 11h4l2-3 2 7 2-4h4" /></>,
+    kidney: <><path d="M8 3C2 3 1 12 4 17c2 3 6 3 7 0 1-2-2-3-3-5s3-3 3-5-1-4-3-4Z" /><path d="M16 3c6 0 7 9 4 14-2 3-6 3-7 0-1-2 2-3 3-5s-3-3-3-5 1-4 3-4Z" /></>,
+    metabolic: <><path d="M12 2S5 10 5 15a7 7 0 0 0 14 0c0-5-7-13-7-13Z" /><path d="m13 10-4 5h5l-3 5" /></>,
+    check: <><circle cx="12" cy="12" r="9" /><path d="m7.5 12 3 3 6-6" /></>,
+    alert: <><path d="M10.3 4a2 2 0 0 1 3.4 0l8 14a2 2 0 0 1-1.7 3H4a2 2 0 0 1-1.7-3Z" /><path d="M12 9v5m0 3v.1" /></>,
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-10v.1" /></>,
+    missing: <><circle cx="12" cy="12" r="9" /><path d="M8 12h8" /></>,
     pin: <><path d="M16 21s7-5.4 7-12a7 7 0 1 0-14 0c0 6.6 7 12 7 12Z" /><circle cx="16" cy="9" r="2.2" /></>,
     air: <><path d="M3 8h13a3 3 0 1 0-2.8-4" /><path d="M2 12h17a3 3 0 1 1-2.8 4" /><path d="M4 16h6" /></>,
     water: <><path d="M12 3s-6 7.1-6 11a6 6 0 0 0 12 0c0-3.9-6-11-6-11Z" /><path d="M9.5 15.5a2.5 2.5 0 0 0 2.5 2" /></>,
@@ -65,23 +72,38 @@ function ActionRow({ action, checked, onToggle }: { action: ActionItem; checked:
 
 function OverviewContent({ profile }: { profile: LocationProfile }) {
   const system = profile.waterSystems[0];
+  const air = profile.air;
+  const airTone = !air ? "neutral" : air.annualPM25 > 9 ? "attention" : "reference";
+  const detections = system?.ucmr5?.detections;
+  const waterTone = detections !== undefined && detections > 0 ? "attention" : system ? "water" : "neutral";
   return (
-    <div className="know-grid">
-      <div className="know-cell">
-        <span className="know-label"><SectionIcon kind="air" /> NEARBY OUTDOOR AIR</span>
-        <strong>{profile.air ? `${profile.air.annualPM25.toFixed(1)} µg/m³` : "No nearby monitor"}</strong>
-        <p>{profile.air ? `${profile.air.monitorName} · ${profile.air.distanceMiles.toFixed(1)} miles · annual PM₂.₅, ${profile.air.year}` : "No complete EPA PM₂.₅ monitor within 50 miles."}</p>
-      </div>
-      <div className="know-cell">
-        <span className="know-label"><SectionIcon kind="water" /> PUBLIC WATER</span>
-        <strong>{system ? system.name : profile.waterLookupAvailable ? "No system matched" : "Map unavailable"}</strong>
-        <p>{system?.ucmr5 ? `${system.ucmr5.detections} UCMR 5 results above reporting level from ${system.ucmr5.results.toLocaleString()} records.` : system ? "No UCMR 5 record matched this service-area system." : "A ZIP-area map match cannot confirm your home's utility."}</p>
-      </div>
-      <div className="know-cell">
-        <span className="know-label"><SectionIcon kind="health" /> COMMUNITY CKM</span>
-        <strong>{profile.healthAvailable ? `${profile.adultPopulation.toLocaleString()} adults estimated` : "Estimate unavailable"}</strong>
-        <p>{profile.healthAvailable ? `CDC PLACES ${profile.healthSource.release} · kidney estimate uses ${profile.healthSource.kidneyBrfssYear} BRFSS.` : "CDC publishes CKM estimates for populated Census ZCTAs, not every postal ZIP."}</p>
-      </div>
+    <div className="report-cards">
+      <article className={`report-card report-${airTone}`}>
+        <div className="report-card-heading"><span className="report-category-icon"><SectionIcon kind="air" /></span><h3>Outdoor air</h3><span className="report-status"><SectionIcon kind={!air ? "missing" : air.annualPM25 > 9 ? "alert" : "check"} />{!air ? "No nearby data" : air.annualPM25 > 9 ? "Above reference" : "Within reference"}</span></div>
+        <div className="report-value">{air ? <>{air.annualPM25.toFixed(1)}<small>µg/m³ PM₂.₅</small></> : <span className="report-value-unavailable">Monitor unavailable</span>}</div>
+        {air && <div className="report-air-scale" aria-hidden="true"><span style={{ left: `${Math.min(98, air.annualPM25 / 18 * 100)}%` }} /><i /></div>}
+        <p>{air ? `Annual ${air.year} · ${air.distanceMiles.toFixed(1)} mi away · reference 9.0 µg/m³` : "No complete EPA PM₂.₅ monitor within 50 miles."}</p>
+        <p className="report-note">{air ? "Annual screening reference; not current AQI or an attainment decision." : "Missing data does not mean clean air."}</p>
+      </article>
+      <article className={`report-card report-${waterTone}`}>
+        <div className="report-card-heading"><span className="report-category-icon"><SectionIcon kind="water" /></span><h3>Drinking water</h3><span className="report-status"><SectionIcon kind={waterTone === "attention" ? "alert" : system ? "info" : "missing"} />{waterTone === "attention" ? "Review results" : system ? "Confirm provider" : "Needs a match"}</span></div>
+        <div className="report-provider">{system?.name ?? (profile.waterLookupAvailable ? "No system matched" : "Service map unavailable")}</div>
+        {detections !== undefined ? <div className="report-water-count"><strong>{detections.toLocaleString()}</strong><span>results above reporting level<br />of {system!.ucmr5!.results.toLocaleString()} sample records</span></div> : <p>{system ? "No UCMR 5 results matched this system." : "Check a utility bill to identify your water provider."}</p>}
+        <p className="report-note">System sampling · not a household tap test or a safety rating.</p>
+      </article>
+      <article className="report-card report-health">
+        <div className="report-card-heading"><span className="report-category-icon"><SectionIcon kind="health" /></span><h3>Community CKM</h3><span className="report-status"><SectionIcon kind="info" />Area estimates</span></div>
+        <div className="report-health-grid">
+          {([
+            ["heart", "Cardiac", "Coronary heart disease", profile.health.chd],
+            ["kidney", "Kidney", "Chronic kidney disease", profile.health.kidneyDisease],
+            ["metabolic", "Metabolic", "Diabetes", profile.health.diabetes],
+          ] as const).map(([kind, label, condition, value]) => <div className={`report-health-metric report-domain-${kind}`} key={kind}>
+            <SectionIcon kind={kind} /><span>{label}</span><strong>{value === null ? "—" : <>{value.toFixed(1)}<small>%</small></>}</strong><span className="report-condition">{condition}</span>
+          </div>)}
+        </div>
+        <p className="report-note">Adult prevalence · {profile.healthSource.brfssYear} cardiac/metabolic, {profile.healthSource.kidneyBrfssYear} kidney · — unavailable</p>
+      </article>
     </div>
   );
 }
@@ -90,6 +112,7 @@ export function EnviroVitalsDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState(0);
   const profileRequest = useRef<AbortController | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const [zip, setZip] = useState(SAMPLE_ZIP);
   const [profile, setProfile] = useState<LocationProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -110,7 +133,10 @@ export function EnviroVitalsDashboard() {
       if (!response.ok) throw new Error(data.error || "Unable to load this ZIP code.");
       if (controller.signal.aborted) return;
       setProfile(data as LocationProfile);
-      if (focus) setFocusRequest(value => value + 1);
+      if (focus) {
+        setFocusRequest(value => value + 1);
+        panelRef.current?.scrollTo({ top: 0, behavior: "auto" });
+      }
       setZip(target);
       let savedMode: WaterMode | null = null;
       try {
@@ -179,6 +205,7 @@ export function EnviroVitalsDashboard() {
       setError("Enter a five-digit ZIP code.");
       return;
     }
+    (event.currentTarget.elements.namedItem("zip") as HTMLInputElement | null)?.blur();
     void loadProfile(zip, true);
   }
 
@@ -216,11 +243,11 @@ export function EnviroVitalsDashboard() {
         <CommunityMap profile={profile} focusRequest={focusRequest} onSelectZip={selectMapZip} />
         {!sidebarOpen && <button className="map-panel-toggle" type="button" onClick={() => setSidebarOpen(true)} aria-controls="community-panel" aria-expanded={false}><SectionIcon kind="pin" /> Explore a ZIP <ArrowIcon /></button>}
 
-        <aside id="community-panel" hidden={!sidebarOpen} className="map-sidebar" aria-label="Community environmental dashboard">
+        <aside ref={panelRef} id="community-panel" hidden={!sidebarOpen} className="map-sidebar" aria-label="Community environmental dashboard">
+          <div className="panel-toolbar"><span><SectionIcon kind="pin" /> ZIP report</span><button type="button" className="panel-close" aria-label="Close ZIP profile" onClick={() => setSidebarOpen(false)}>×</button></div>
           <div className="panel-heading">
-            <button type="button" className="panel-close" aria-label="Close ZIP profile" onClick={() => setSidebarOpen(false)}>×</button>
             <div className="panel-brand-line"><BrandMark /><span>COMMUNITY ENVIRONMENTAL HEALTH</span></div>
-            <h1>Health starts with knowing your place.</h1>
+            <h1>Your ZIP, at a glance.</h1>
             <p>Local conditions, community health, and practical steps in one view.</p>
           </div>
 
@@ -230,6 +257,7 @@ export function EnviroVitalsDashboard() {
               <span className="search-icon"><SectionIcon kind="pin" /></span>
               <input
                 id="zip-search-input"
+                name="zip"
                 inputMode="numeric"
                 pattern="[0-9]{5}"
                 maxLength={5}
@@ -260,7 +288,7 @@ export function EnviroVitalsDashboard() {
           {profile ? (
             <div className="sidebar-content">
               <details className="panel-disclosure" open>
-                <summary><span className="summary-icon"><SectionIcon kind="pulse" /></span><span>What We Know</span><span className="summary-chev" /></summary>
+                <summary><span className="summary-icon"><SectionIcon kind="pulse" /></span><span>Community report card</span><span className="summary-chev" /></summary>
                 <OverviewContent profile={profile} />
               </details>
 
@@ -268,21 +296,21 @@ export function EnviroVitalsDashboard() {
                 <summary><span className="summary-icon"><SectionIcon kind="air" /></span><span>Environmental Concerns</span><span className="summary-chev" /></summary>
                 <div className="concern-list">
                   <details className="concern-item" id="concern-air" open>
-                    <summary><span className="concern-dot concern-dot-air" /><span className="concern-title">Outdoor air · PM₂.₅</span><span className="concern-value">{nearestAir ? `${nearestAir.annualPM25.toFixed(1)} µg/m³` : "No monitor"}</span><span className="summary-chev" /></summary>
+                    <summary><span className={`concern-symbol ${nearestAir && nearestAir.annualPM25 > 9 ? "concern-symbol-attention" : "concern-symbol-air"}`}><SectionIcon kind="air" /></span><span className="concern-title">Outdoor air · PM₂.₅</span><span className="concern-value">{nearestAir ? `${nearestAir.annualPM25.toFixed(1)} µg/m³` : "No monitor"}</span><span className="summary-chev" /></summary>
                     <div className="concern-detail">
-                      {nearestAir ? <><p><strong>{nearestAir.monitorName}</strong> is the nearest complete 2025 EPA monitor, {nearestAir.distanceMiles.toFixed(1)} miles from this ZIP area.</p><p>{nearestAir.annualPM25 > 9 ? "Above" : "At or below"} EPA’s 9.0 µg/m³ annual reference. A single-year reading is not an attainment decision.</p></> : <p>No complete EPA PM₂.₅ monitor was found within 50 miles. The nationwide map shows state-based context.</p>}
+                      {nearestAir ? <><p><strong>{nearestAir.monitorName}</strong> is the nearest complete 2025 EPA monitor, {nearestAir.distanceMiles.toFixed(1)} miles from this ZIP area.</p><p>{nearestAir.annualPM25 > 9 ? "Above" : "At or below"} EPA’s 9.0 µg/m³ annual reference. A single-year reading is not an attainment decision.</p></> : <p>No complete EPA PM₂.₅ monitor was found within 50 miles. The nationwide map combines ZIP health estimates with state air context.</p>}
                       <p className="detail-meta">{profile.airMonitors.length} complete EPA monitor{profile.airMonitors.length === 1 ? "" : "s"} within 50 miles · 2025 annual data</p>
                     </div>
                   </details>
                   <details className="concern-item" id="concern-water">
-                    <summary><span className="concern-dot concern-dot-water" /><span className="concern-title">Drinking water</span><span className="concern-value">{topSystem ? "System match" : "Needs confirmation"}</span><span className="summary-chev" /></summary>
+                    <summary><span className="concern-symbol concern-symbol-water"><SectionIcon kind="water" /></span><span className="concern-title">Drinking water</span><span className="concern-value">{topSystem ? "System match" : "Needs confirmation"}</span><span className="summary-chev" /></summary>
                     <div className="concern-detail">
                       {topSystem ? <><p><strong>{topSystem.name}</strong> overlaps the mapped ZIP area. Confirm it serves your address with a utility bill or provider.</p><p>{topSystem.ucmr5 ? `${topSystem.ucmr5.detections} above-reporting-level result${topSystem.ucmr5.detections === 1 ? "" : "s"} in ${topSystem.ucmr5.results.toLocaleString()} EPA UCMR 5 samples.` : "No UCMR 5 record was matched; missing records are not non-detections."}</p></> : <p>{profile.waterLookupAvailable ? "The EPA map did not identify a provider at the ZIP-area coordinates." : "The EPA service-area map is temporarily unavailable."} Check your bill or ask the property owner which system serves the address.</p>}
                       <p className="detail-meta">System-area data does not test water at your tap.</p>
                     </div>
                   </details>
                   <details className="concern-item" id="concern-health">
-                    <summary><span className="concern-dot concern-dot-health" /><span className="concern-title">Community CKM</span><span className="concern-value">{profile.healthAvailable ? "CDC estimate" : "Unavailable"}</span><span className="summary-chev" /></summary>
+                    <summary><span className="concern-symbol concern-symbol-health"><SectionIcon kind="health" /></span><span className="concern-title">Community CKM</span><span className="concern-value">{profile.healthAvailable ? "CDC estimate" : "Unavailable"}</span><span className="summary-chev" /></summary>
                     <div className="concern-detail">
                       {profile.healthAvailable ? <><p>Adult prevalence estimates for {profile.adultPopulation.toLocaleString()} people in this Census ZCTA.</p><p>CHD {formatEstimate(profile.health.chd)} · CKD {formatEstimate(profile.health.kidneyDisease)} · Diabetes {formatEstimate(profile.health.diabetes)} per 100 adults.</p></> : <p>CDC PLACES has no matching populated ZCTA estimate for this postal ZIP. The dash means unavailable, not zero.</p>}
                       <p className="detail-meta">Community context only · not a personal diagnosis.</p>
