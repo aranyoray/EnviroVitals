@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { AirMonitor, LocationProfile, UcmrSummary, WaterSystem } from "@/lib/profile";
+import type { AirMonitor, HealthMeasure, LocationProfile, UcmrSummary, WaterSystem } from "@/lib/profile";
 
 type PlaceRow = {
   z: string;
@@ -68,6 +68,49 @@ const ucmrData = require("@/data/ucmr5-by-pws.json") as UcmrDataset;
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 const placeByZip = new Map(placesData.records.map((row) => [row.z, row]));
+
+// National reference distributions let the profile say where a ZCTA estimate sits among all
+// CDC PLACES ZCTAs, so "14.2% diabetes" also reads as "higher than 82% of US ZCTAs".
+const measureValue: Record<HealthMeasure, (row: PlaceRow) => number | null> = {
+  chd: (row) => row.c.chd,
+  stroke: (row) => row.c.stroke,
+  bloodPressure: (row) => row.c.bp,
+  highCholesterol: (row) => row.c.chol,
+  diabetes: (row) => row.c.diabetes,
+  obesity: (row) => row.c.obesity,
+  kidneyDisease: (row) => row.kidney,
+};
+const measureKeys = Object.keys(measureValue) as HealthMeasure[];
+const sortedMeasures = Object.fromEntries(measureKeys.map((key) => {
+  const values = placesData.records.map(measureValue[key]).filter((value): value is number => typeof value === "number" && Number.isFinite(value)).sort((a, b) => a - b);
+  return [key, values];
+})) as Record<HealthMeasure, number[]>;
+const measureMedians = Object.fromEntries(measureKeys.map((key) => {
+  const values = sortedMeasures[key];
+  if (!values.length) return [key, null];
+  const mid = Math.floor(values.length / 2);
+  return [key, values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2];
+})) as Record<HealthMeasure, number | null>;
+
+function bound(values: number[], target: number, upper: boolean): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (upper ? values[mid] <= target : values[mid] < target) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+/** Midrank percentile (0–100) of a value within the national ZCTA distribution. */
+function percentileRank(key: HealthMeasure, value: number | null): number | null {
+  const values = sortedMeasures[key];
+  if (value === null || !values.length) return null;
+  const below = bound(values, value, false);
+  const through = bound(values, value, true);
+  return Math.round(((below + (through - below) / 2) / values.length) * 1000) / 10;
+}
 const waterRegionsByState: Record<string, string> = {
   CT: "01", ME: "01", MA: "01", NH: "01", RI: "01", VT: "01",
   NJ: "02", NY: "02", PR: "02", VI: "02",
@@ -224,6 +267,15 @@ export async function GET(request: NextRequest) {
 
   const waterLookup = await lookupWaterSystems(latitude, longitude);
   const airMonitors = nearbyMonitors(latitude, longitude);
+  const health: LocationProfile["health"] = {
+    chd: placeRow?.c.chd ?? null,
+    stroke: placeRow?.c.stroke ?? null,
+    bloodPressure: placeRow?.c.bp ?? null,
+    highCholesterol: placeRow?.c.chol ?? null,
+    diabetes: placeRow?.c.diabetes ?? null,
+    obesity: placeRow?.c.obesity ?? null,
+    kidneyDisease: placeRow?.kidney ?? null,
+  };
   const profile: LocationProfile = {
     zip,
     ...place,
@@ -232,15 +284,9 @@ export async function GET(request: NextRequest) {
     population: placeRow?.p ?? 0,
     adultPopulation: placeRow?.a ?? 0,
     healthAvailable: Boolean(placeRow),
-    health: {
-      chd: placeRow?.c.chd ?? null,
-      stroke: placeRow?.c.stroke ?? null,
-      bloodPressure: placeRow?.c.bp ?? null,
-      highCholesterol: placeRow?.c.chol ?? null,
-      diabetes: placeRow?.c.diabetes ?? null,
-      obesity: placeRow?.c.obesity ?? null,
-      kidneyDisease: placeRow?.kidney ?? null,
-    },
+    health,
+    healthRank: Object.fromEntries(measureKeys.map((key) => [key, percentileRank(key, health[key])])) as LocationProfile["healthRank"],
+    healthMedian: measureMedians,
     healthSource: {
       release: placesData.meta.placesRelease,
       brfssYear: placesData.meta.placesBrfssYear,

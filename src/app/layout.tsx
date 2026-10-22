@@ -6,14 +6,14 @@ import "./globals.css";
 const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "EnviroVitals — community CKM health",
-  description: "Explore cardiovascular, kidney, and metabolic prevalence with local air and drinking-water context, plus a deterministic household action checklist.",
+  title: "EnviroVitals — One Health CKM dashboard",
+  description: "Live air quality, heat and weather alerts, drinking-water records and community cardiovascular-kidney-metabolic (CKM) estimates for any US ZIP, with value-specific steps for patients and households.",
   applicationName: "EnviroVitals",
   manifest: "/manifest.webmanifest",
-  keywords: ["community health", "CKM", "cardiovascular", "kidney", "metabolic", "air quality", "drinking water", "ZIP code"],
+  keywords: ["community health", "CKM", "cardiovascular", "kidney", "metabolic", "One Health", "air quality", "AQI", "heat", "drinking water", "PFAS", "ZIP code"],
   openGraph: {
-    title: "EnviroVitals — community CKM health",
-    description: "A ZIP-level view of CKM prevalence, nearby air and drinking-water data, and practical actions.",
+    title: "EnviroVitals — One Health CKM dashboard",
+    description: "A ZIP-level One Health view of CKM health: live AQI, heat and NWS alerts, drinking-water records, community prevalence, and steps that depend on today's values.",
     type: "website",
     siteName: "EnviroVitals",
   },

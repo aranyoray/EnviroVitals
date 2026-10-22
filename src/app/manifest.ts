@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "EnviroVitals — community CKM health",
+    name: "EnviroVitals — One Health CKM dashboard",
     short_name: "EnviroVitals",
-    description: "Community CKM prevalence, local air and drinking-water context, and practical household actions.",
+    description: "Live air, heat and water conditions, community CKM prevalence, and value-specific steps for patients and households.",
     id: "/",
     start_url: "/",
     scope: "/",
