@@ -223,6 +223,150 @@ export function ckmStageContext(conditions: ReadonlySet<CkmCondition>): { stage:
   };
 }
 
+/* ---------- AQI → CKM action guide, personalized per ZIP ---------- */
+
+export interface CkmAirAction {
+  /** Imperative label, e.g. "Mask up". */
+  label: string;
+  text: string;
+}
+
+export interface CkmAirLevel {
+  id: "good" | "moderate" | "usg" | "unhealthy";
+  name: string;
+  tone: AqiBand["tone"];
+  aqiRange: string;
+  pm25Range: string;
+  aqiMax: number;
+  /** What this band does to the cardiovascular–kidney–metabolic system. */
+  means: string;
+  actions: CkmAirAction[];
+}
+
+/**
+ * The EPA AQI collapsed to the four bands that change what a CKM patient
+ * should do. PM₂.₅ figures are EPA's current breakpoints (revised May 2024:
+ * Good ends at 9.0 µg/m³, not the older 12.0) so they agree with the 9.0
+ * µg/m³ annual reference used elsewhere in this report.
+ */
+export const CKM_AIR_LEVELS: ReadonlyArray<CkmAirLevel> = [
+  {
+    id: "good",
+    name: "Good",
+    tone: "good",
+    aqiRange: "0–50",
+    pm25Range: "0.0–9.0 µg/m³",
+    aqiMax: 50,
+    means: "Safe ambient air. Minimal added systemic inflammation, so nothing outdoors has to be rationed today.",
+    actions: [
+      { label: "Maximize outdoor activity", text: "Aerobic exercise—walking, cycling, anything that raises your heart rate. Cardiovascular fitness is the strongest modifiable brake on CKM progression, and the AHA asks for 150 minutes a week." },
+      { label: "Ventilate", text: "Open the windows and flush the indoor air; indoor pollutants build up on the days you keep the house sealed." },
+    ],
+  },
+  {
+    id: "moderate",
+    name: "Moderate",
+    tone: "moderate",
+    aqiRange: "51–100",
+    pm25Range: "9.1–35.4 µg/m³",
+    aqiMax: 100,
+    means: "Acceptable for most people, but unusually sensitive adults and advanced CKM (AHA stage 3 or 4) can feel subtle strain.",
+    actions: [
+      { label: "Monitor symptoms", text: "Watch for fatigue, mild breathlessness or a sudden shift in your blood-pressure readings, and log them against the AQI instead of dismissing them." },
+      { label: "Modify exertion", text: "With advanced heart or kidney disease, keep the session shorter and lighter, or move the intense part of it indoors." },
+    ],
+  },
+  {
+    id: "usg",
+    name: "Unhealthy for Sensitive Groups",
+    tone: "usg",
+    aqiRange: "101–150",
+    pm25Range: "35.5–55.4 µg/m³",
+    aqiMax: 150,
+    means: "High-alert zone. Particles start driving oxidative stress on the nephrons—the kidney's filters—and on vascular tissue.",
+    actions: [
+      { label: "Move indoors", text: "Shift all exercise inside. It is still fine to be outdoors for errands; it is the prolonged or heavy exertion that matters." },
+      { label: "Purify the air", text: "Close the windows, set the HVAC fan to recirculate, and run a HEPA cleaner in the room you spend most of the day in." },
+      { label: "Hold your medication line", text: "Take your prescribed CKM protectors—ACE inhibitors, ARBs, SGLT2 inhibitors—exactly on schedule. A stable baseline is what absorbs a pollution spike." },
+    ],
+  },
+  {
+    id: "unhealthy",
+    name: "Unhealthy and above",
+    tone: "unhealthy",
+    aqiRange: "151 and up",
+    pm25Range: "55.5 µg/m³ and up",
+    aqiMax: Infinity,
+    means: "Dangerous. This band raises the short-term risk of arrhythmia, clotting and acute metabolic and kidney events, not just symptoms.",
+    actions: [
+      { label: "Avoid outdoor air", text: "Stay indoors and keep activity low. Build one clean room with a HEPA cleaner and keep rescue medicines within reach." },
+      { label: "Mask up", text: "If you must step outside, wear a well-fitted N95 or other particulate respirator. Surgical and cloth masks do not filter fine particles." },
+    ],
+  },
+];
+
+export function ckmAirLevelFor(aqi: number): CkmAirLevel {
+  return CKM_AIR_LEVELS.find((level) => aqi <= level.aqiMax) ?? CKM_AIR_LEVELS[CKM_AIR_LEVELS.length - 1];
+}
+
+/** Same four bands, reached from a PM₂.₅ concentration instead of an AQI value. */
+export function ckmAirLevelForPm25(pm25: number): CkmAirLevel {
+  if (pm25 <= 9) return CKM_AIR_LEVELS[0];
+  if (pm25 <= 35.4) return CKM_AIR_LEVELS[1];
+  if (pm25 <= 55.4) return CKM_AIR_LEVELS[2];
+  return CKM_AIR_LEVELS[3];
+}
+
+/** One personalized line per selected condition, for the band currently in force. */
+const CKM_AIR_PERSONAL: Record<CkmCondition, Record<CkmAirLevel["id"], string>> = {
+  hypertension: {
+    good: "Blood pressure answers to aerobic activity within weeks—use a clean-air day for the longer session.",
+    moderate: "Particle exposure nudges blood pressure up within hours. If you track at home, log today's reading next to the AQI rather than dismissing a high number.",
+    usg: "Keep the indoor session, and keep your ACE inhibitor, ARB or diuretic on schedule—a stable baseline is what absorbs a spike.",
+    unhealthy: "Stay in with a HEPA cleaner running, and call your clinician about a reading far above your usual range instead of waiting it out.",
+  },
+  diabetes: {
+    good: "A walk after meals is the cheapest glucose control there is, and today's air does not stand in the way.",
+    moderate: "PM₂.₅ worsens insulin resistance over days rather than minutes. Keep the routine; just shorten a hard session if you feel unusually flat.",
+    usg: "Move the workout indoors but hold the usual meal and medication timing—a disrupted routine shifts glucose more than one polluted afternoon does.",
+    unhealthy: "Stay indoors and check glucose more often than usual; the stress response to a pollution episode pushes it up.",
+  },
+  ckd: {
+    good: "Clean air and regular activity both slow the decline in eGFR. This is a day to be outside.",
+    moderate: "Nothing to change today. Keep to your fluid plan and your scheduled labs—the risk at this level is cumulative, not acute.",
+    usg: "Particles at this level drive oxidative stress on the nephrons. Exercise indoors, and do not reach for ibuprofen or naproxen for the headache a smoky day brings; NSAIDs cut kidney blood flow.",
+    unhealthy: "Stay indoors, keep to your fluid plan, keep taking your ACE inhibitor, ARB or SGLT2 inhibitor, and avoid NSAIDs entirely.",
+  },
+  heart: {
+    good: "Full activity. Cardiorespiratory fitness is the single modifiable factor that most slows CKM progression.",
+    moderate: "EPA names heart disease first among the sensitive groups. Soften or shorten today's outdoor session rather than skipping it.",
+    usg: "Move all exercise indoors. Palpitations, chest pressure or new breathlessness on a polluted day is a reason to call, not to rest and see.",
+    unhealthy: "Remain indoors with a HEPA cleaner running and rescue medicines to hand. Treat new chest pain or an irregular beat as an emergency—this band raises arrhythmia and clotting risk.",
+  },
+  weight: {
+    good: "Take the outdoor session. Clean-air days are when the weekly 150 minutes actually get banked.",
+    moderate: "No change needed. Keep the routine outdoors if it feels normal.",
+    usg: "Swap to an indoor session rather than dropping it; consistency matters more than the setting.",
+    unhealthy: "Indoor only today. Stairs or a bodyweight circuit keep the week intact without the exposure.",
+  },
+  older: {
+    good: "Open the windows while the air is clean, and get the walk in early.",
+    moderate: "Adults 65 and over are a sensitive group even at Moderate. Keep the walk, drop the hill.",
+    usg: "Stay in, run the air cleaner, and arrange for someone to check in if you live alone.",
+    unhealthy: "Remain indoors and keep activity low. Ask someone to check in today, and make sure you have a few days of medicine in hand.",
+  },
+};
+
+export function ckmAirPersonalSteps(
+  level: CkmAirLevel,
+  conditions: ReadonlySet<CkmCondition>,
+): { label: string; text: string }[] {
+  return CKM_CONDITIONS.filter((condition) => conditions.has(condition.id)).map((condition) => ({
+    label: condition.label,
+    text: CKM_AIR_PERSONAL[condition.id][level.id],
+  }));
+}
+
 /* ---------- Water reference values ---------- */
 
 /** 2024 EPA PFAS rule, in ng/L. On May 18, 2026 EPA proposed rescinding the three 10 ng/L limits and the hazard index; PFOA and PFOS stand. */

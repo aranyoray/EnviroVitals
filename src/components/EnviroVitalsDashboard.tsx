@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CommunityMap } from "@/components/CommunityMap";
 import type { ActionItem, CkmCondition, LiveConditions, LocationProfile, WaterMode } from "@/lib/profile";
-import { ACTION_CATEGORIES, CKM_CONDITIONS, HEALTH_MEASURES, aqiBand, buildActionPlan, calculateEnviroHealth, ckmStageContext, formatEstimate, formatRank, heatBand, pollutantLabel } from "@/lib/profile";
+import { ACTION_CATEGORIES, CKM_AIR_LEVELS, CKM_CONDITIONS, HEALTH_MEASURES, aqiBand, buildActionPlan, calculateEnviroHealth, ckmAirLevelFor, ckmAirLevelForPm25, ckmAirPersonalSteps, ckmStageContext, formatEstimate, formatRank, heatBand, pollutantLabel } from "@/lib/profile";
 
 const SAMPLE_ZIP = "10013";
 const STORAGE_KEY = "envirovitals.actions.v1";
@@ -144,6 +144,56 @@ function LiveCard({ live }: { live: LiveConditions | null | undefined }) {
       {air?.actionDay && <p className="live-action-day"><SectionIcon kind="alert" /> Air Quality Action Day declared{air.agency ? ` by ${air.agency}` : ""}.</p>}
       <p className="report-note">AirNow hourly observation · NWS alerts · Open-Meteo feels-like{updated ? ` · updated ${updated.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""} · refreshes every 10 min</p>
     </article>
+  );
+}
+
+function CkmAirGuide({ profile, live, conditions }: { profile: LocationProfile; live: LiveConditions | null | undefined; conditions: Set<CkmCondition> }) {
+  const air = live?.air ?? null;
+  const annual = profile.air;
+  // Today's band comes from the live AQI. With no live reading the nearest
+  // monitor's annual mean stands in as background, clearly labeled as such.
+  const today = air ? ckmAirLevelFor(air.aqi) : null;
+  const proxy = !air && annual ? ckmAirLevelForPm25(annual.annualPM25) : null;
+  const here = today ?? proxy;
+  const personal = here ? ckmAirPersonalSteps(here, conditions) : [];
+  const place = profile.city ? `${profile.city}${profile.stateAbbr ? `, ${profile.stateAbbr}` : ""}` : `ZIP ${profile.zip}`;
+  const community = HEALTH_MEASURES
+    .map((measure) => ({ label: measure.label, rank: profile.healthRank[measure.key] }))
+    .filter((entry): entry is { label: string; rank: number } => entry.rank !== null)
+    .sort((a, b) => b.rank - a.rank)[0];
+  return (
+    <div className="ckm-air-guide">
+      <p className="ckm-air-lead">
+        {today && air ? <>ZIP {profile.zip} ({place}) is at <strong>AQI {air.aqi}</strong> for {pollutantLabel(air.pollutant)} right now, which puts today in the <strong>{today.name}</strong> row.</>
+          : proxy && annual ? <>No live AQI reached ZIP {profile.zip} just now. The nearest EPA monitor averaged <strong>{annual.annualPM25.toFixed(1)} µg/m³</strong> across {annual.year}, a long-run level in the <strong>{proxy.name}</strong> row—background exposure, not today&apos;s reading.</>
+          : live === undefined ? <>Loading the current reading for ZIP {profile.zip} to mark today&apos;s row.</>
+          : <>Neither a live AQI nor an EPA monitor within 50 miles covers ZIP {profile.zip}, so today&apos;s row is unknown—which is not the same as Good.</>}
+      </p>
+      {community && community.rank >= 60 && (
+        <p className="ckm-air-lead ckm-air-community">{community.label} in this ZIP area is {formatRank(community.rank)}, so the sensitive-group rows below apply to more of your neighbors than they would nationally.</p>
+      )}
+      <div className="ckm-air-table">
+        {CKM_AIR_LEVELS.map((level) => {
+          const isHere = here?.id === level.id;
+          return (
+            <section className={`ckm-air-row ckm-air-${level.tone} ${isHere ? "ckm-air-row-here" : ""}`} key={level.id} aria-current={isHere ? "true" : undefined}>
+              <header className="ckm-air-row-head">
+                <span className="ckm-air-name"><i className={`aqi-swatch aqi-${level.tone}`} aria-hidden="true" />{level.name}</span>
+                {isHere && <span className="ckm-air-here">{today ? "You are here" : "Annual proxy"}</span>}
+                <span className="ckm-air-range">AQI {level.aqiRange} · PM₂.₅ {level.pm25Range}</span>
+              </header>
+              <p className="ckm-air-means">{level.means}</p>
+              <ul className="ckm-air-actions">
+                {level.actions.map((action) => <li key={action.label}><strong>{action.label}:</strong> {action.text}</li>)}
+                {isHere && personal.map((item) => <li className="ckm-air-personal" key={item.label}><strong>{item.label}:</strong> {item.text}</li>)}
+              </ul>
+              {isHere && !personal.length && <p className="ckm-air-prompt">Pick what applies to you under <strong>What You Can Do</strong> to add your own lines to this row.</p>}
+            </section>
+          );
+        })}
+      </div>
+      <p className="ckm-air-note">AQI bands and breakpoints: EPA, revised May 2024—Good now ends at 9.0 µg/m³ rather than 12.0. CKM framing follows the AHA 2023 presidential advisory. General guidance for a ZIP area, not a treatment plan.</p>
+    </div>
   );
 }
 
@@ -327,6 +377,8 @@ export function EnviroVitalsDashboard() {
   const stage = ckmStageContext(conditions);
   const liveAir = live?.air ?? null;
   const liveBand = liveAir ? aqiBand(liveAir.aqi) : null;
+  // The band the AQI → CKM guide is currently pointing at, mirrored in the panel summary.
+  const guideLevel = liveAir ? ckmAirLevelFor(liveAir.aqi) : profile?.air ? ckmAirLevelForPm25(profile.air.annualPM25) : null;
   const weather = live?.weather ?? null;
   const peakFeelsLike = weather ? Math.max(weather.feelsLikeF, weather.todayMaxFeelsLikeF ?? -Infinity) : null;
   const heat = peakFeelsLike !== null ? heatBand(peakFeelsLike) : null;
@@ -472,6 +524,11 @@ export function EnviroVitalsDashboard() {
                     </div>
                   </details>
                 </div>
+              </details>
+
+              <details className="panel-disclosure" id="air-ckm-actions" open>
+                <summary><span className="summary-icon"><SectionIcon kind="heart" /></span><span>Air quality &rarr; your CKM actions</span>{guideLevel && <span className="summary-count summary-count-band">{guideLevel.name}</span>}<span className="summary-chev" /></summary>
+                <CkmAirGuide profile={profile} live={live} conditions={conditions} />
               </details>
 
               <details className="panel-disclosure" id="what-were-tracking">
