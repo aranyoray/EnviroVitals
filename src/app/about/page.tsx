@@ -105,8 +105,8 @@ function ExternalIcon() {
 export default function AboutPage() {
   return (
     <main className="about-page">
-      <div className="about-topline"><span>ENVIROVITALS · TRANSPARENCY</span><Link href="/">← Back to ZIP profile</Link></div>
-      <div className="eyebrow" style={{ marginTop: 44 }}>SOURCES &amp; METHODS</div>
+      <div className="about-topline"><span>EnviroVitals · Transparency</span><Link href="/">← Back to ZIP profile</Link></div>
+      <div className="eyebrow" style={{ marginTop: 44 }}>Sources &amp; methods</div>
       <h1>What the ZIP profile can—and cannot—say.</h1>
       <p className="about-deck">EnviroVitals is a One Health view of cardiovascular-kidney-metabolic (CKM) health: live air, heat and weather alerts, drinking-water records and community prevalence for one ZIP, turned into steps that depend on the actual values. The dates and geographies differ by measure, and the app keeps those differences visible.</p>
 

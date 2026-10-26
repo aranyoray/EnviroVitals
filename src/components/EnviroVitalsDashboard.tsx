@@ -429,10 +429,10 @@ export function EnviroVitalsDashboard() {
         <Link href="/" className="brand-lockup" aria-label="EnviroVitals home">
           <BrandMark />
           <span>EnviroVitals</span>
-          <i>ONE HEALTH · CKM</i>
+          <i>One Health · CKM</i>
         </Link>
         <nav className="header-nav" aria-label="Main navigation">
-          <span className="header-data-label"><span className="live-dot" /> LIVE + PUBLIC DATA</span>
+          <span className="header-data-label"><span className="live-dot" /> Live + public data</span>
           <Link href="/about">Sources &amp; methods <ArrowIcon /></Link>
         </nav>
       </header>
@@ -444,7 +444,7 @@ export function EnviroVitalsDashboard() {
         <aside ref={panelRef} id="community-panel" hidden={!sidebarOpen} className="map-sidebar" aria-label="Community CKM and environmental dashboard">
           <div className="panel-toolbar"><span><SectionIcon kind="pin" /> ZIP report</span><button type="button" className="panel-close" aria-label="Close ZIP profile" onClick={() => setSidebarOpen(false)}>×</button></div>
           <div className="panel-heading">
-            <div className="panel-brand-line"><BrandMark /><span>ONE HEALTH · PEOPLE · ANIMALS · ENVIRONMENT</span></div>
+            <div className="panel-brand-line"><BrandMark /><span>One Health · people, animals, environment</span></div>
             <h1>Your ZIP, your CKM health.</h1>
             <p>Live air, heat and water conditions, community heart–kidney–metabolic estimates, and the steps that fit you today.</p>
           </div>
@@ -476,11 +476,11 @@ export function EnviroVitalsDashboard() {
 
           <div className="location-row" aria-live="polite">
             <div className="location-copy">
-              <span className="eyebrow">CURRENT AREA</span>
+              <span className="eyebrow">Current area</span>
               <h2>{loading && !profile ? "Loading ZIP profile" : locationName}</h2>
               <p>{profile ? `ZIP ${profile.zip}${profile.healthAvailable ? ` · ${profile.adultPopulation.toLocaleString()} estimated adults` : " · CDC estimate unavailable"}` : "ZIP 10013 · New York, NY"}</p>
             </div>
-            <span className="area-status"><i /> {loading ? profile ? "UPDATING" : "CONNECTING" : profile ? "PROFILE READY" : "SEARCH TO BEGIN"}</span>
+            <span className="area-status"><i /> {loading ? profile ? "UPDATING" : "CONNECTING" : profile ? "Profile ready" : "Search to begin"}</span>
           </div>
 
           {profile ? (
@@ -550,7 +550,7 @@ export function EnviroVitalsDashboard() {
                 <summary><span className="summary-icon"><SectionIcon kind="tasks" /></span><span>What You Can Do</span><span className="summary-count">{completedCount}/{actions.length}</span><span className="summary-chev" /></summary>
                 <div className="action-panel-content">
                   <div className="mini-score">
-                    <div><span className="eyebrow">ENVIROHEALTH ACTION SCORE</span><strong>{score}<small>/100</small></strong></div>
+                    <div><span className="eyebrow">EnviroHealth action score</span><strong>{score}<small>/100</small></strong></div>
                     <div className="mini-score-track"><span style={{ width: `${score}%` }} /></div>
                     <p>{completedPoints} of {totalPoints} task points completed · checklist progress only, not a risk score</p>
                   </div>
